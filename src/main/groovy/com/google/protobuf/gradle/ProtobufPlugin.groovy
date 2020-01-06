@@ -35,7 +35,9 @@ import org.gradle.api.GradleException
 import org.gradle.api.Plugin
 import org.gradle.api.Project
 import org.gradle.api.Task
+import org.gradle.api.artifacts.Configuration
 import org.gradle.api.attributes.Attribute
+import org.gradle.api.attributes.LibraryElements
 import org.gradle.api.file.FileCollection
 import org.gradle.api.file.SourceDirectorySet
 import org.gradle.api.internal.file.DefaultSourceDirectorySet
@@ -43,7 +45,6 @@ import org.gradle.api.internal.file.FileResolver
 import org.gradle.api.internal.file.collections.DefaultDirectoryFileTreeFactory
 import org.gradle.api.logging.LogLevel
 import org.gradle.api.plugins.AppliedPlugin
-import org.gradle.api.tasks.PathSensitivity
 import org.gradle.api.tasks.SourceSet
 
 import javax.inject.Inject
@@ -55,6 +56,7 @@ class ProtobufPlugin implements Plugin<Project> {
     // any one of these plugins should be sufficient to proceed with applying this plugin
     private static final List<String> PREREQ_PLUGIN_OPTIONS = [
             'java',
+            'java-library',
             'com.android.application',
             'com.android.feature',
             'com.android.library',
@@ -91,7 +93,7 @@ class ProtobufPlugin implements Plugin<Project> {
         // throw an Exception to alert the user of this configuration issue.
         Action<? super AppliedPlugin> applyWithPrerequisitePlugin = { prerequisitePlugin ->
           if (wasApplied) {
-            project.logger.warn('The com.google.protobuf plugin was already applied to the project: ' + project.path
+            project.logger.info('The com.google.protobuf plugin was already applied to the project: ' + project.path
                 + ' and will not be applied again after plugin: ' + prerequisitePlugin.id)
           } else {
             wasApplied = true
@@ -136,7 +138,7 @@ class ProtobufPlugin implements Plugin<Project> {
 
         addSourceSetExtensions()
         getSourceSets().all { sourceSet ->
-          createConfiguration(sourceSet.name)
+          createConfigurations(sourceSet.name)
         }
         project.afterEvaluate {
           // The Android variants are only available at this point.
@@ -159,17 +161,40 @@ class ProtobufPlugin implements Plugin<Project> {
     }
 
     /**
-     * Creates a configuration if necessary for a source set so that the build
+     * Creates configurations if necessary for a source set so that the build
      * author can configure dependencies for it.
      */
-    private void  createConfiguration(String sourceSetName) {
-      String configName = Utils.getConfigName(sourceSetName, 'protobuf')
-      if (project.configurations.findByName(configName) == null) {
-        project.configurations.create(configName) {
+    private void  createConfigurations(String sourceSetName) {
+      String protobufConfigName = Utils.getConfigName(sourceSetName, 'protobuf')
+      if (project.configurations.findByName(protobufConfigName) == null) {
+        project.configurations.create(protobufConfigName) {
           visible = false
           transitive = true
           extendsFrom = []
         }
+      }
+
+      // Create a 'compileProtoPath' configuration that extends compilation configurations
+      // as a bucket of dependencies with resources attribute. This works around 'java-library'
+      // plugin not exposing resources to consumers for compilation.
+      // Some Android sourceSets (more precisely, variants) do not have compilation configurations,
+      // they do not contain compilation dependencies, so they would not depend on any upstream
+      // proto files.
+      String compileProtoConfigName = Utils.getConfigName(sourceSetName, 'compileProtoPath')
+      Configuration compileConfig =
+              project.configurations.findByName(Utils.getConfigName(sourceSetName, 'compileOnly'))
+      Configuration implementationConfig =
+              project.configurations.findByName(Utils.getConfigName(sourceSetName, 'implementation'))
+      if (compileConfig && implementationConfig &&
+              project.configurations.findByName(compileProtoConfigName) == null) {
+        project.configurations.create(compileProtoConfigName) {
+          visible = false
+          transitive = true
+          extendsFrom = [compileConfig, implementationConfig]
+          canBeConsumed = false
+        }.getAttributes().attribute(
+                LibraryElements.LIBRARY_ELEMENTS_ATTRIBUTE,
+                project.getObjects().named(LibraryElements, LibraryElements.RESOURCES))
       }
     }
 
@@ -336,8 +361,7 @@ class ProtobufPlugin implements Plugin<Project> {
         task = project.tasks.create(extractProtosTaskName, ProtobufExtract) {
           description = "Extracts proto files/dependencies specified by 'protobuf' configuration"
           destDir = getExtractedProtosDir(sourceSetName) as File
-          inputs.files(project.configurations[Utils.getConfigName(sourceSetName, 'protobuf')])
-                  .withPathSensitivity(PathSensitivity.NAME_ONLY)
+          inputFiles.from(project.configurations[Utils.getConfigName(sourceSetName, 'protobuf')])
           isTest = Utils.isTest(sourceSetName)
         }
       }
@@ -365,9 +389,8 @@ class ProtobufPlugin implements Plugin<Project> {
         task = project.tasks.create(extractIncludeProtosTaskName, ProtobufExtract) {
           description = "Extracts proto files from compile dependencies for includes"
           destDir = getExtractedIncludeProtosDir(sourceSetOrVariantName) as File
-          inputs.files (compileClasspathConfiguration
-            ?: project.configurations[Utils.getConfigName(sourceSetOrVariantName, 'compile')])
-                  .withPathSensitivity(PathSensitivity.NAME_ONLY)
+          inputFiles.from(compileClasspathConfiguration
+            ?: project.configurations[Utils.getConfigName(sourceSetOrVariantName, 'compileProtoPath')])
 
           // TL; DR: Make protos in 'test' sourceSet able to import protos from the 'main'
           // sourceSet.  Sub-configurations, e.g., 'testCompile' that extends 'compile', don't
@@ -380,16 +403,15 @@ class ProtobufPlugin implements Plugin<Project> {
             // ad-hoc solution that manually includes the source protos of 'main' and its
             // dependencies.
             if (Utils.isTest(sourceSetOrVariantName)) {
-              inputs.files getSourceSets()['main'].proto
-              inputs.files testedCompileClasspathConfiguration ?: project.configurations['compile']
+              inputFiles.from getSourceSets()['main'].proto
+              inputFiles.from testedCompileClasspathConfiguration ?: project.configurations['compile']
             }
           } else {
             // In Java projects, the compileClasspath of the 'test' sourceSet includes all the
             // 'resources' of the output of 'main', in which the source protos are placed.  This is
             // nicer than the ad-hoc solution that Android has, because it works for any extended
             // configuration, not just 'testCompile'.
-            inputs.files (getSourceSets()[sourceSetOrVariantName].compileClasspath)
-                    .withPathSensitivity(PathSensitivity.NAME_ONLY)
+            inputFiles.from getSourceSets()[sourceSetOrVariantName].compileClasspath
           }
           isTest = Utils.isTest(sourceSetOrVariantName)
         }

@@ -5,16 +5,18 @@ import static com.google.protobuf.gradle.ProtobufPluginTestHelper.buildAndroidPr
 import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.TaskOutcome
 import spock.lang.Specification
+import spock.lang.Unroll
 
 /**
  * Unit tests for android related functionality.
  */
 class ProtobufAndroidPluginTest extends Specification {
-  // Current supported version is Android plugin 3.3.0+.
-  private static final List<String> GRADLE_VERSION = ["5.0", "5.1.1", "5.4.1"]
-  private static final List<String> ANDROID_PLUGIN_VERSION = ["3.3.0", "3.4.0", "3.5.0"]
+  private static final List<String> GRADLE_VERSION = ["5.6"]
+  private static final List<String> ANDROID_PLUGIN_VERSION = ["3.5.0"]
+  private static final List<String> KOTLIN_VERSION = ["1.3.20"]
 
-  void "testProjectAndroid should be successfully executed (java only)"() {
+  @Unroll
+  void "testProjectAndroid should be successfully executed [android #agpVersion, gradle #gradleVersion]"() {
     given: "project from testProject, testProjectLite & testProjectAndroid"
     File testProjectStaging = ProtobufPluginTestHelper.projectBuilder('testProject')
         .copyDirs('testProjectBase', 'testProject')
@@ -27,11 +29,11 @@ class ProtobufAndroidPluginTest extends Specification {
         .build()
     File mainProjectDir = ProtobufPluginTestHelper.projectBuilder('testProjectAndroidMain')
         .copySubProjects(testProjectStaging, testProjectLiteStaging, testProjectAndroidStaging)
+        .withAndroidPlugin(agpVersion)
         .build()
     when: "build is invoked"
     BuildResult result = buildAndroidProject(
        mainProjectDir,
-       androidPluginVersion,
        gradleVersion,
        "testProjectAndroid:build"
     )
@@ -40,11 +42,12 @@ class ProtobufAndroidPluginTest extends Specification {
     result.task(":testProjectAndroid:build").outcome == TaskOutcome.SUCCESS
 
     where:
-    androidPluginVersion << ANDROID_PLUGIN_VERSION
+    agpVersion << ANDROID_PLUGIN_VERSION
     gradleVersion << GRADLE_VERSION
   }
 
-  void "testProjectAndroidKotlin should be successfully executed (kotlin only)"() {
+  @Unroll
+  void "testProjectAndroidKotlin [android #agpVersion, gradle #gradleVersion, kotlin #kotlinVersion]"() {
     given: "project from testProject, testProjectLite & testProjectAndroid"
     File testProjectStaging = ProtobufPluginTestHelper.projectBuilder('testProject')
         .copyDirs('testProjectBase', 'testProject')
@@ -57,11 +60,12 @@ class ProtobufAndroidPluginTest extends Specification {
         .build()
     File mainProjectDir = ProtobufPluginTestHelper.projectBuilder('testProjectAndroidMain')
         .copySubProjects(testProjectStaging, testProjectLiteStaging, testProjectAndroidStaging)
+        .withAndroidPlugin(agpVersion)
+        .withKotlin(kotlinVersion)
         .build()
     when: "build is invoked"
     BuildResult result = buildAndroidProject(
        mainProjectDir,
-       androidPluginVersion,
        gradleVersion,
        "testProjectAndroid:build"
     )
@@ -70,7 +74,8 @@ class ProtobufAndroidPluginTest extends Specification {
     result.task(":testProjectAndroid:build").outcome == TaskOutcome.SUCCESS
 
     where:
-    androidPluginVersion << ANDROID_PLUGIN_VERSION
+    agpVersion << ANDROID_PLUGIN_VERSION
     gradleVersion << GRADLE_VERSION
+    kotlinVersion << KOTLIN_VERSION
   }
 }

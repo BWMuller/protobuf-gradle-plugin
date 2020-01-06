@@ -7,13 +7,15 @@ import org.gradle.testkit.runner.BuildResult
 import org.gradle.testkit.runner.GradleRunner
 import org.gradle.testkit.runner.TaskOutcome
 import spock.lang.Specification
+import spock.lang.Unroll
 
 /**
  * Unit tests for normal java and kotlin functionality.
  */
 class ProtobufJavaPluginTest extends Specification {
   // Current supported version is Gradle 5+.
-  private static final List<String> GRADLE_VERSIONS = ["5.0", "5.1", "5.4", "5.6"]
+  private static final List<String> GRADLE_VERSIONS = ["5.6", "6.0"]
+  private static final List<String> KOTLIN_VERSIONS = ["1.3.20", "1.3.30"]
 
   void "testApplying java and com.google.protobuf adds corresponding task to project"() {
     given: "a basic project with java and com.google.protobuf"
@@ -49,7 +51,8 @@ class ProtobufJavaPluginTest extends Specification {
     assert project.tasks.extractMain2Proto instanceof ProtobufExtract
   }
 
-  void "testProject should be successfully executed (java-only project)"() {
+  @Unroll
+  void "testProject should be successfully executed (java-only project) [gradle #gradleVersion]"() {
     given: "project from testProject"
     File projectDir = ProtobufPluginTestHelper.projectBuilder('testProject')
         .copyDirs('testProjectBase', 'testProject')
@@ -59,6 +62,7 @@ class ProtobufJavaPluginTest extends Specification {
     BuildResult result = GradleRunner.create()
       .withProjectDir(projectDir)
       .withArguments('build', '--stacktrace')
+      .withPluginClasspath()
       .withGradleVersion(gradleVersion)
       .forwardStdOutput(new OutputStreamWriter(System.out))
       .forwardStdError(new OutputStreamWriter(System.err))
@@ -73,7 +77,8 @@ class ProtobufJavaPluginTest extends Specification {
     gradleVersion << GRADLE_VERSIONS
   }
 
-  void "testProjectBuildTimeProto should be successfully executed"() {
+  @Unroll
+  void "testProjectBuildTimeProto should be successfully executed [gradle #gradleVersion]"() {
     given: "project from testProjectGeneratedProto"
     File projectDir = ProtobufPluginTestHelper.projectBuilder('testProjectBuildTimeProto')
             .copyDirs('testProjectBuildTimeProto')
@@ -83,6 +88,7 @@ class ProtobufJavaPluginTest extends Specification {
     BuildResult result = GradleRunner.create()
             .withProjectDir(projectDir)
             .withArguments('build', '--stacktrace')
+            .withPluginClasspath()
             .withGradleVersion(gradleVersion)
             .forwardStdOutput(new OutputStreamWriter(System.out))
             .forwardStdError(new OutputStreamWriter(System.err))
@@ -96,16 +102,19 @@ class ProtobufJavaPluginTest extends Specification {
     gradleVersion << GRADLE_VERSIONS
   }
 
-  void "testProjectKotlin should be successfully executed (kotlin-only project)"() {
+  @Unroll
+  void "testProjectKotlin (kotlin-only project) [gradle #gradleVersion, kotlin #kotlinVersion]"() {
     given: "project from testProjectKotlin overlaid on testProject"
     File projectDir = ProtobufPluginTestHelper.projectBuilder('testProjectKotlin')
         .copyDirs('testProjectBase', 'testProjectKotlin')
+        .withKotlin(kotlinVersion)
         .build()
 
     when: "build is invoked"
     BuildResult result = GradleRunner.create()
       .withProjectDir(projectDir)
       .withArguments('build', '--stacktrace')
+      .withPluginClasspath()
       .withDebug(true)
       .withGradleVersion(gradleVersion)
       .build()
@@ -116,18 +125,22 @@ class ProtobufJavaPluginTest extends Specification {
 
     where:
     gradleVersion << GRADLE_VERSIONS
+    kotlinVersion << KOTLIN_VERSIONS
   }
 
-  void "testProjectJavaAndKotlin should be successfully executed (java+kotlin project)"() {
+  @Unroll
+  void "testProjectJavaAndKotlin (java+kotlin project) [gradle #gradleVersion, kotlin #kotlinVersion]"() {
     given: "project from testProjecJavaAndKotlin overlaid on testProjectKotlin, testProject"
     File projectDir = ProtobufPluginTestHelper.projectBuilder('testProjectJavaAndKotlin')
         .copyDirs('testProjectBase', 'testProject', 'testProjectKotlin', 'testProjectJavaAndKotlin')
+        .withKotlin(kotlinVersion)
         .build()
 
     when: "build is invoked"
     BuildResult result = GradleRunner.create()
       .withProjectDir(projectDir)
       .withArguments('build')
+      .withPluginClasspath()
       .withDebug(true)
       .withGradleVersion(gradleVersion)
       .build()
@@ -138,9 +151,11 @@ class ProtobufJavaPluginTest extends Specification {
 
     where:
     gradleVersion << GRADLE_VERSIONS
+    kotlinVersion << KOTLIN_VERSIONS
   }
 
-  void "testProjectLite should be successfully executed"() {
+  @Unroll
+  void "testProjectLite should be successfully executed [gradle #gradleVersion]"() {
     given: "project from testProjectLite"
     File projectDir = ProtobufPluginTestHelper.projectBuilder('testProjectLite')
         .copyDirs('testProjectBase', 'testProjectLite')
@@ -150,6 +165,7 @@ class ProtobufJavaPluginTest extends Specification {
     BuildResult result = GradleRunner.create()
       .withProjectDir(projectDir)
       .withArguments('build', '--stacktrace')
+      .withPluginClasspath()
       .withGradleVersion(gradleVersion)
       .forwardStdOutput(new OutputStreamWriter(System.out))
       .forwardStdError(new OutputStreamWriter(System.err))
@@ -163,7 +179,8 @@ class ProtobufJavaPluginTest extends Specification {
     gradleVersion << GRADLE_VERSIONS
   }
 
-  void "testProjectDependent should be successfully executed"() {
+  @Unroll
+  void "testProjectDependent should be successfully executed [gradle #gradleVersion]"() {
     given: "project from testProject & testProjectDependent"
     File testProjectStaging = ProtobufPluginTestHelper.projectBuilder('testProject')
         .copyDirs('testProjectBase', 'testProject')
@@ -180,6 +197,7 @@ class ProtobufJavaPluginTest extends Specification {
     BuildResult result = GradleRunner.create()
       .withProjectDir(mainProjectDir)
       .withArguments('testProjectDependent:build', '--stacktrace')
+      .withPluginClasspath()
       .withGradleVersion(gradleVersion)
       .forwardStdOutput(new OutputStreamWriter(System.out))
       .forwardStdError(new OutputStreamWriter(System.err))
@@ -193,7 +211,66 @@ class ProtobufJavaPluginTest extends Specification {
     gradleVersion << GRADLE_VERSIONS
   }
 
-  void "testProjectCustomProtoDir should be successfully executed"() {
+  @Unroll
+  void "testProjectJavaLibrary should be successfully executed (java-only as a library) [gradle #gradleVersion]"() {
+    given: "project from testProjectJavaLibrary"
+    File projectDir = ProtobufPluginTestHelper.projectBuilder('testProjectJavaLibrary')
+            .copyDirs('testProjectBase', 'testProjectJavaLibrary')
+            .build()
+
+    when: "build is invoked"
+    BuildResult result = GradleRunner.create()
+            .withProjectDir(projectDir)
+            .withArguments('build', '--stacktrace')
+            .withPluginClasspath()
+            .withGradleVersion(gradleVersion)
+            .forwardStdOutput(new OutputStreamWriter(System.out))
+            .forwardStdError(new OutputStreamWriter(System.err))
+            .withDebug(true)
+            .build()
+
+    then: "it succeed"
+    result.task(":build").outcome == TaskOutcome.SUCCESS
+    ProtobufPluginTestHelper.verifyProjectDir(projectDir)
+
+    where:
+    gradleVersion << GRADLE_VERSIONS
+  }
+
+  @Unroll
+  void "testProjectDependentApp should be successfully executed [gradle #gradleVersion]"() {
+    given: "project from testProject & testProjectDependent"
+    File testProjectStaging = ProtobufPluginTestHelper.projectBuilder('testProjectJavaLibrary')
+            .copyDirs('testProjectBase', 'testProjectJavaLibrary')
+            .build()
+    File testProjectDependentStaging = ProtobufPluginTestHelper.projectBuilder('testProjectDependentApp')
+            .copyDirs('testProjectDependentApp')
+            .build()
+
+    File mainProjectDir = ProtobufPluginTestHelper.projectBuilder('testProjectDependentAppMain')
+            .copySubProjects(testProjectStaging, testProjectDependentStaging)
+            .build()
+
+    when: "build is invoked"
+    BuildResult result = GradleRunner.create()
+            .withProjectDir(mainProjectDir)
+            .withArguments('testProjectDependentApp:build', '--stacktrace')
+            .withPluginClasspath()
+            .withGradleVersion(gradleVersion)
+            .forwardStdOutput(new OutputStreamWriter(System.out))
+            .forwardStdError(new OutputStreamWriter(System.err))
+            .withDebug(true)
+            .build()
+
+    then: "it succeed"
+    result.task(":testProjectDependentApp:build").outcome == TaskOutcome.SUCCESS
+
+    where:
+    gradleVersion << GRADLE_VERSIONS
+  }
+
+  @Unroll
+  void "testProjectCustomProtoDir should be successfully executed [gradle #gradleVersion]"() {
     given: "project from testProjectCustomProtoDir"
     File projectDir = ProtobufPluginTestHelper.projectBuilder('testProjectCustomProtoDir')
         .copyDirs('testProjectCustomProtoDir')
@@ -203,6 +280,7 @@ class ProtobufJavaPluginTest extends Specification {
     BuildResult result = GradleRunner.create()
       .withProjectDir(projectDir)
       .withArguments('build', '--stacktrace')
+      .withPluginClasspath()
       .withGradleVersion(gradleVersion)
       .forwardStdOutput(new OutputStreamWriter(System.out))
       .forwardStdError(new OutputStreamWriter(System.err))
@@ -216,7 +294,8 @@ class ProtobufJavaPluginTest extends Specification {
     gradleVersion << GRADLE_VERSIONS
   }
 
-  void "testProject proto and generated output directories should be added to intellij"() {
+  @Unroll
+  void "testProject proto and generated output directories should be added to intellij [gradle #gradleVersion]"() {
     given: "project from testProject"
     File projectDir = ProtobufPluginTestHelper.projectBuilder('testIdea')
         .copyDirs('testProjectBase', 'testProject')
@@ -226,6 +305,7 @@ class ProtobufJavaPluginTest extends Specification {
     BuildResult result = GradleRunner.create()
       .withProjectDir(projectDir)
       .withArguments('idea')
+      .withPluginClasspath()
       .withGradleVersion(gradleVersion)
       .build()
 
